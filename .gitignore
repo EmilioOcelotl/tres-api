@@ -1,0 +1,19 @@
+# Dependencias
+node_modules/
+
+# Caches
+.cache/
+
+# Logs
+*.log
+
+# Variables de entorno
+.env
+
+# macOS
+.DS_Store
+
+# Base de datos SQLite y archivos temporales
+notas.sqlite
+notas.sqlite-shm
+notas.sqlite-wal
