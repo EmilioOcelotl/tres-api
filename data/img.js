@@ -1,4 +1,4 @@
-const imageData = {ñ´
+const imageData = {
     
     "imgs":[
 	{
