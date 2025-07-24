@@ -4,6 +4,7 @@ import cors from 'cors';
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import turndown from 'turndown';
+import imgData from './data/img.js';
 
 const app = express();
 const port = 3000;
@@ -61,84 +62,41 @@ function findNodeByTitle(nodes, title) {
   return null;
 }
 
-function generateTresEstudiosPDF(node, outputPath) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument();
-    const stream = fs.createWriteStream(outputPath);
+const insertarPaginaGaleria = (doc, imagen) => {
+  try {
+    doc.addPage();
 
-    doc.pipe(stream);
+    // Margen para el pie de foto
+    const margenPie = 40;
 
-    // Configuración inicial
-    doc.font('fonts/SpaceGrotesk.ttf');
-    doc.fontSize(12);
-    doc.text('Tres Estudios Abiertos', {
+    // Calcular dimensiones manteniendo aspect ratio
+    const anchoMax = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const altoMax = doc.page.height - margenPie;
+
+    // Insertar imagen centrada
+    doc.image(imagen.img, {
+      fit: [anchoMax, altoMax],
       align: 'center',
-      underline: true,
-      fontSize: 18,
-      margin: [0, 0, 0, 20]
+      valign: 'center'
     });
 
-    let references = null;
-
-    // Procesar contenido
-    node.children.forEach(capitulo => {
-      if (capitulo.title.toLowerCase() === 'referencias') {
-        references = capitulo; // Guardar para el final
-        return;
-      }
-
-      // Estilo para capítulos
-      doc.fontSize(14);
-      doc.text(capitulo.title, {
-        paragraphGap: 5,
-        indent: 20,
-        continued: false
-      });
-
-      // Procesar notas del capítulo
-      capitulo.children.forEach(nota => {
-        const contentPlain = nota.content ? nota.content.replace(/<[^>]+>/g, '').trim() : '';
-
-        doc.fontSize(12);
-        if (contentPlain) {
-          doc.text(contentPlain, {
-            paragraphGap: 10,
-            indent: 30,
-            align: 'justify'
-          });
-        } else {
-          doc.text(`- ${nota.title}`, {
-            indent: 30
-          });
-        }
-      });
-    });
-
-    // Añadir referencias al final
-    if (references) {
-      doc.addPage(); // Opcional: nueva página para referencias
-      doc.fontSize(14);
-      doc.text(references.title, {
-        paragraphGap: 5,
-        indent: 20,
-        underline: true
-      });
-
-      references.children.forEach(nota => {
-        const contentPlain = nota.content ? nota.content.replace(/<[^>]+>/g, '').trim() : '';
-        doc.fontSize(12);
-        doc.text(contentPlain || `- ${nota.title}`, {
-          indent: 30,
-          paragraphGap: 5
+    // Pie de foto estilizado
+    if (imagen.nota || imagen.titulo) {
+      doc.font('fonts/SpaceGrotesk.ttf')
+        .fontSize(9)
+        .fillColor('#555555')
+        .text(imagen.titulo ? `${imagen.titulo}. ${imagen.nota || ''}` : imagen.nota, {
+          width: anchoMax,
+          align: 'center',
+          x: doc.page.margins.left,
+          y: doc.page.height - margenPie + 10
         });
-      });
     }
 
-    doc.end();
-    stream.on('finish', resolve);
-    stream.on('error', reject);
-  });
-}
+  } catch (err) {
+    console.error(`Error al insertar imagen ${imagen.img}:`, err);
+  }
+};
 
 app.get('/api/pdf', async (req, res) => {
   try {
@@ -187,6 +145,10 @@ app.get('/api/pdf', async (req, res) => {
       bufferPages: true
     });
 
+    // Variables para control de imágenes
+    const imagenesDisponibles = [...imgData.title, ...imgData.imgs];
+    let contadorPaginas = 0;
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="Tres_Estudios_Abiertos.pdf"');
     doc.pipe(res);
@@ -203,7 +165,7 @@ app.get('/api/pdf', async (req, res) => {
       replacement: () => ' '
     });
 
-    doc.moveDown(5); 
+    doc.moveDown(5);
 
     // 5. PORTADA COMPLETA
     doc.font('fonts/SpaceGrotesk.ttf')
@@ -275,22 +237,23 @@ app.get('/api/pdf', async (req, res) => {
         continue;
       }
 
+
       const chapterTitle = capitulo.title.toUpperCase(); // Space Grotesk funciona mejor en mayúsculas
       const titleHeight = 18 * 1.2; // fontSize * lineHeight aproximado
-      
+
       // Calcular posición Y para centrado vertical
       const centerY = (doc.page.height - titleHeight) / 2;
-      
+
       doc.font('fonts/SpaceGrotesk.ttf')
-         .fontSize(18)
-         .text(chapterTitle, {
-           align: 'center',
-           y: centerY // Posición vertical calculada
-         });
-      
+        .fontSize(18)
+        .text(chapterTitle, {
+          align: 'center',
+          y: centerY // Posición vertical calculada
+        });
+
       // Espacio después del título (opcional)
       doc.moveDown(2);
-      
+
       // Resetear posición para contenido
       doc.y = centerY + titleHeight + 40;
       doc.addPage();
@@ -298,20 +261,32 @@ app.get('/api/pdf', async (req, res) => {
       // Contenido de notas
       for (const nota of capitulo.children) {
         if (nota.content) {
-          const markdown = turndownService.turndown(nota.content);
-          doc.font('fonts/SpaceGrotesk.ttf')
-            .fontSize(12)
-            .text(markdown, {
-              indent: 10,
-              paragraphGap: 5
-            });
+            const markdown = turndownService.turndown(nota.content);
+            
+            // 1. Primero verifica si debe insertar imagen ANTES del texto
+            if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
+                const imagenSeleccionada = imagenesDisponibles.shift();
+                insertarPaginaGaleria(doc, imagenSeleccionada);
+                contadorPaginas++; // Contar la página de imagen
+                doc.addPage(); // Nueva página para el texto que sigue
+            }
+            
+            // 2. Luego escribe el texto
+            doc.font('fonts/SpaceGrotesk.ttf')
+               .fontSize(12)
+               .text(markdown, {
+                   indent: 10,
+                   paragraphGap: 5
+               });
         } else {
-          doc.text(`- ${nota.title}`, { indent: 30 });
+            doc.text(`- ${nota.title}`, { indent: 30 });
         }
+        
         doc.moveDown(0.3);
-      }
-      doc.addPage();
+        contadorPaginas++;
+    }
 
+      doc.addPage();
     }
 
     // 7. Referencias al final
@@ -346,6 +321,7 @@ app.get('/api/pdf', async (req, res) => {
     }
   }
 });
+
 
 app.listen(port, () => {
   console.log(`Servidor corriendo en http://localhost:${port}`);
