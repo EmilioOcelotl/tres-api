@@ -3,6 +3,7 @@ import sqlite3 from 'sqlite3';
 import cors from 'cors';
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
+import turndown from 'turndown';
 
 const app = express();
 const port = 3000;
@@ -141,13 +142,18 @@ function generateTresEstudiosPDF(node, outputPath) {
 
 app.get('/api/pdf', async (req, res) => {
   try {
-    // Consultas a la base de datos
+    // 1. Consultas a la base de datos
     const { notes, branches, note_contents } = await new Promise((resolve, reject) => {
+      const db = new sqlite3.Database('./notas.sqlite');
+      
       db.all(`SELECT noteId, title FROM notes WHERE isDeleted = 0`, [], (err, notes) => {
         if (err) return reject(err);
+        
         db.all(`SELECT branchId, noteId, parentNoteId, notePosition FROM branches WHERE isDeleted = 0`, [], (err, branches) => {
           if (err) return reject(err);
+          
           db.all(`SELECT noteId, content FROM note_contents`, [], (err, note_contents) => {
+            db.close();
             if (err) return reject(err);
             resolve({ notes, branches, note_contents });
           });
@@ -155,7 +161,7 @@ app.get('/api/pdf', async (req, res) => {
       });
     });
 
-    // Procesamiento de datos
+    // 2. Procesar datos
     const notesWithContent = notes.map(note => ({
       ...note,
       content: note_contents.find(nc => nc.noteId === note.noteId)?.content || ''
@@ -165,70 +171,102 @@ app.get('/api/pdf', async (req, res) => {
     const root = findNodeByTitle(tree, 'Tres Estudios Abiertos');
 
     if (!root) {
-      return res.status(404).send('No se encontró "Tres Estudios Abiertos"');
+      return res.status(404).json({ error: 'No se encontró "Tres Estudios Abiertos"' });
     }
 
-    // Generar PDF en memoria
-    const doc = new PDFDocument();
-    
-    // Configurar headers antes de escribir el PDF
+    // 3. Configurar PDF
+    const doc = new PDFDocument({
+      margins: { top: 50, bottom: 50, left: 50, right: 50 }
+    });
+
+    // Configurar respuesta
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="Tres_Estudios_Abiertos.pdf"');
-    
-    // Pipe directo a la respuesta HTTP
     doc.pipe(res);
 
-    // Contenido del PDF (usa la misma lógica que en generateTresEstudiosPDF)
-    doc.font('Helvetica')
-       .fontSize(18)
-       .text('Tres Estudios Abiertos', { align: 'center', underline: true })
-       .moveDown(0.5);
+    // 4. Configurar Turndown (versión compatible)
+    const turndownService = turndown({
+      headingStyle: 'atx',
+      bulletListMarker: '-',
+      codeBlockStyle: 'fenced'
+    });
 
-    let references = null;
+    // Regla para espacios no rompibles
+    turndownService.addRule('nbsp', {
+      filter: ['nbsp'],
+      replacement: () => ' '
+    });
 
-    // Procesar capítulos
-    root.children.forEach(capitulo => {
+    // 5. Portada
+    doc.font('Helvetica-Bold')
+       .fontSize(22)
+       .text('Tres Estudios Abiertos', { align: 'center' })
+       .moveDown(1.5);
+
+    // 6. Procesar contenido
+    let referencesNode = null;
+
+    for (const capitulo of root.children) {
       if (capitulo.title.toLowerCase() === 'referencias') {
-        references = capitulo;
-        return;
+        referencesNode = capitulo;
+        continue;
       }
 
-      doc.fontSize(14)
-         .text(capitulo.title, { paragraphGap: 5, indent: 20 })
-         .moveDown(0.3);
+      // Título del capítulo
+      doc.font('Helvetica-Bold')
+         .fontSize(18)
+         .text(capitulo.title)
+         .moveDown(0.5);
 
-      capitulo.children.forEach(nota => {
-        const contentPlain = nota.content?.replace(/<[^>]+>/g, '').trim() || '';
-        doc.fontSize(12);
-        
-        if (contentPlain) {
-          doc.text(contentPlain, { indent: 30, align: 'justify', paragraphGap: 5 });
+      // Contenido de notas
+      for (const nota of capitulo.children) {
+        if (nota.content) {
+          const markdown = turndownService.turndown(nota.content);
+          doc.font('Helvetica')
+             .fontSize(12)
+             .text(markdown, {
+               indent: 20,
+               align: 'justify',
+               paragraphGap: 5
+             });
         } else {
           doc.text(`- ${nota.title}`, { indent: 30 });
         }
-        doc.moveDown(0.2);
-      });
-    });
-
-    // Añadir referencias al final
-    if (references) {
-      doc.addPage()
-         .fontSize(14)
-         .text(references.title, { underline: true, paragraphGap: 5 });
-      
-      references.children.forEach(nota => {
-        const contentPlain = nota.content?.replace(/<[^>]+>/g, '').trim() || '';
-        doc.fontSize(12)
-           .text(contentPlain || `- ${nota.title}`, { indent: 30 });
-      });
+        doc.moveDown(0.3);
+      }
     }
 
-    // Finalizar el PDF
+    // 7. Referencias al final
+    if (referencesNode) {
+      doc.addPage()
+         .font('Helvetica-Bold')
+         .fontSize(18)
+         .text('Referencias')
+         .moveDown(0.5);
+
+      for (const nota of referencesNode.children) {
+        const content = nota.content 
+          ? turndownService.turndown(nota.content)
+          : `- ${nota.title}`;
+        
+        doc.font('Helvetica')
+           .fontSize(12)
+           .text(content, { indent: 20 })
+           .moveDown(0.2);
+      }
+    }
+
+    // Finalizar documento
     doc.end();
 
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error interno');
+    console.error('Error generando PDF:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: 'Error al generar el PDF',
+        details: err.message 
+      });
+    }
   }
 });
 
