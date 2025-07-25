@@ -26,4 +26,4 @@ node inspect-db.mjs
 
 ## Endpoints
 
-- **/api/tres** imprime el archivo pdf (antes /tres) 
+- **/api/pdf** imprime el archivo pdf (antes /tres) 

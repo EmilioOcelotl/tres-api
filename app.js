@@ -66,31 +66,84 @@ const insertarPaginaGaleria = (doc, imagen) => {
   try {
     doc.addPage();
 
-    // Margen para el pie de foto
-    const margenPie = 40;
+    // Configuración de márgenes (reducidos para maximizar espacio)
+    const margenSuperior = 30;
+    const margenInferior = 30;
+    const margenLateral = 54;
 
-    // Calcular dimensiones manteniendo aspect ratio
-    const anchoMax = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const altoMax = doc.page.height - margenPie;
+    // Dimensiones disponibles
+    const anchoDisponible = doc.page.width - (margenLateral * 2);
+    const altoDisponible = doc.page.height - margenSuperior - margenInferior;
 
-    // Insertar imagen centrada
-    doc.image(imagen.img, {
-      fit: [anchoMax, altoMax],
-      align: 'center',
-      valign: 'center'
+    // 1. Precalcular espacio para el pie de foto (mínimo 4 líneas)
+    let textoPie = '';
+    let alturaPie = 0;
+    
+    if (imagen.nota || imagen.titulo) {
+      textoPie = imagen.titulo ? `${imagen.titulo}. ${imagen.nota || ''}` : imagen.nota;
+      alturaPie = Math.max(
+        doc.font('fonts/SpaceGrotesk.ttf').fontSize(9).heightOfString(textoPie, { width: anchoDisponible }),
+        9 * 4 // Mínimo espacio para 4 líneas
+      );
+    }
+
+    // 2. Cargar imagen y analizar proporciones
+    const img = doc.openImage(imagen.img);
+    const esVertical = img.height > img.width * 1.2; // Si es 20% más alta que ancha
+    const esCuadrada = Math.abs(img.width - img.height) < img.width * 0.1; // ±10%
+
+    // 3. Ajustar estrategia según tipo de imagen
+    let imgWidth, imgHeight;
+    
+    if (esVertical) {
+      // Para imágenes verticales: limitar altura y centrar
+      const ratio = Math.min(
+        anchoDisponible / img.width,
+        (altoDisponible * 0.7) / img.height // Usar solo 70% del alto disponible
+      );
+      imgWidth = img.width * ratio;
+      imgHeight = img.height * ratio;
+    } else if (esCuadrada) {
+      // Para imágenes cuadradas: usar 80% del espacio menor
+      const espacioDisponible = Math.min(anchoDisponible, altoDisponible - alturaPie) * 0.8;
+      const ratio = espacioDisponible / Math.max(img.width, img.height);
+      imgWidth = img.width * ratio;
+      imgHeight = img.height * ratio;
+    } else {
+      // Para horizontales: comportamiento normal
+      const ratio = Math.min(
+        anchoDisponible / img.width,
+        (altoDisponible - alturaPie) / img.height
+      );
+      imgWidth = img.width * ratio;
+      imgHeight = img.height * ratio;
+    }
+
+    // 4. Calcular posición centrada con espacio garantizado para el pie
+    const espacioLibreVertical = doc.page.height - margenSuperior - imgHeight - alturaPie - margenInferior;
+    const yImagen = margenSuperior + Math.max(0, espacioLibreVertical / 2);
+
+    // 5. Dibujar imagen
+    const xImagen = margenLateral + (anchoDisponible - imgWidth) / 2;
+    doc.image(imagen.img, xImagen, yImagen, {
+      width: imgWidth,
+      height: imgHeight
     });
 
-    // Pie de foto estilizado
-    if (imagen.nota || imagen.titulo) {
+    // 6. Pie de foto con posición asegurada
+    if (textoPie) {
+      const yTexto = Math.min(
+        yImagen + imgHeight + 10,
+        doc.page.height - margenInferior - alturaPie
+      );
+      
       doc.font('fonts/SpaceGrotesk.ttf')
-        .fontSize(9)
-        .fillColor('#555555')
-        .text(imagen.titulo ? `${imagen.titulo}. ${imagen.nota || ''}` : imagen.nota, {
-          width: anchoMax,
-          align: 'center',
-          x: doc.page.margins.left,
-          y: doc.page.height - margenPie + 10
-        });
+         .fontSize(9)
+         .fillColor('#555555')
+         .text(textoPie, margenLateral, yTexto, {
+           width: anchoDisponible,
+           align: 'center'
+         });
     }
 
   } catch (err) {
@@ -134,14 +187,14 @@ app.get('/api/pdf', async (req, res) => {
 
     // 3. Configuración del PDF
     const doc = new PDFDocument({
-      size: 'A4',
+      size: [595, 595],
       margins: {
-        top: 72,
-        bottom: 72,
+        top: 54,
+        bottom: 54,
         left: 54,
         right: 54,
       },
-      layout: 'portrait',
+      // layout: 'portrait',
       bufferPages: true
     });
 
@@ -165,9 +218,9 @@ app.get('/api/pdf', async (req, res) => {
       replacement: () => ' '
     });
 
-    doc.moveDown(5);
-
     // 5. PORTADA COMPLETA
+    doc.moveDown(3);
+
     doc.font('fonts/SpaceGrotesk.ttf')
       .fontSize(18)
       .text('UNIVERSIDAD NACIONAL AUTÓNOMA DE MÉXICO', {
@@ -182,43 +235,43 @@ app.get('/api/pdf', async (req, res) => {
       .text('Facultad de Música', { align: 'right' })
       .text('Instituto de Ciencias Aplicadas y Tecnología', { align: 'right' })
       .text('Instituto de Investigaciones Antropológicas', { align: 'right' })
-      .moveDown(3);
+      .moveDown(1);
 
     doc.font('fonts/SpaceGrotesk.ttf')
-      .fontSize(20)
+      .fontSize(18)
       .text('TRES ESTUDIOS ABIERTOS', { align: 'right' })
       .moveDown(0.5);
 
     doc.font('fonts/SpaceGrotesk.ttf')
-      .fontSize(14)
+      .fontSize(11)
       .text('Escritura de código en Javascript para el performance audiovisual y la investigación artística', {
         align: 'right',
         lineGap: 5
       })
-      .moveDown(4);
+      .moveDown(1);
 
     doc.font('fonts/SpaceGrotesk.ttf')
-      .fontSize(12)
+      .fontSize(11)
       .text('Que para optar por el grado de', { align: 'right' })
-      .moveDown(0.5);
+      .moveDown(1);
 
     doc.font('fonts/SpaceGrotesk.ttf')
-      .fontSize(14)
+      .fontSize(11)
       .text('Doctor en Música', { align: 'right' })
       .font('fonts/SpaceGrotesk.ttf')
-      .fontSize(12)
+      .fontSize(11)
       .text('(Tecnología Musical)', { align: 'right' })
-      .moveDown(2);
+      .moveDown(1);
 
     doc.font('fonts/SpaceGrotesk.ttf')
-      .fontSize(12)
+      .fontSize(11)
       .text('Presenta', { align: 'right' })
       .moveDown(1);
 
     doc.font('fonts/SpaceGrotesk.ttf')
       .fontSize(14)
       .text('Emilio Ocelotl Reyes', { align: 'right' })
-      .moveDown(2);
+      .moveDown(1);
 
     doc.font('fonts/SpaceGrotesk.ttf')
       .fontSize(12)
@@ -273,7 +326,7 @@ app.get('/api/pdf', async (req, res) => {
             
             // 2. Luego escribe el texto
             doc.font('fonts/SpaceGrotesk.ttf')
-               .fontSize(12)
+               .fontSize(11)
                .text(markdown, {
                    indent: 10,
                    paragraphGap: 5
@@ -303,7 +356,7 @@ app.get('/api/pdf', async (req, res) => {
           : `- ${nota.title}`;
 
         doc.font('fonts/SpaceGrotesk.ttf')
-          .fontSize(12)
+          .fontSize(11)
           .text(content, { indent: 20 })
           .moveDown(0.2);
       }
