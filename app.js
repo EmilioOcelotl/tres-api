@@ -2,7 +2,6 @@ import express from 'express';
 import sqlite3 from 'sqlite3';
 import cors from 'cors';
 import PDFDocument from 'pdfkit';
-import fs from 'fs';
 import turndown from 'turndown';
 import imgData from './data/img.js';
 
@@ -78,7 +77,7 @@ const insertarPaginaGaleria = (doc, imagen) => {
     // 1. Precalcular espacio para el pie de foto (mínimo 4 líneas)
     let textoPie = '';
     let alturaPie = 0;
-    
+
     if (imagen.nota || imagen.titulo) {
       textoPie = imagen.titulo ? `${imagen.titulo}. ${imagen.nota || ''}` : imagen.nota;
       alturaPie = Math.max(
@@ -94,7 +93,7 @@ const insertarPaginaGaleria = (doc, imagen) => {
 
     // 3. Ajustar estrategia según tipo de imagen
     let imgWidth, imgHeight;
-    
+
     if (esVertical) {
       // Para imágenes verticales: limitar altura y centrar
       const ratio = Math.min(
@@ -136,20 +135,67 @@ const insertarPaginaGaleria = (doc, imagen) => {
         yImagen + imgHeight + 10,
         doc.page.height - margenInferior - alturaPie
       );
-      
+
       doc.font('fonts/SpaceGrotesk.ttf')
-         .fontSize(9)
-         .fillColor('#555555')
-         .text(textoPie, margenLateral, yTexto, {
-           width: anchoDisponible,
-           align: 'center'
-         });
+        .fontSize(9)
+        .fillColor('#555555')
+        .text(textoPie, margenLateral, yTexto, {
+          width: anchoDisponible,
+          align: 'center'
+        });
     }
 
   } catch (err) {
     console.error(`Error al insertar imagen ${imagen.img}:`, err);
   }
 };
+
+function processAclaracionesChapter(doc, chapter, turndownService, imagenesDisponibles, contadorPaginas) {
+  if (!chapter) return contadorPaginas;
+
+  // Configuración de página para el capítulo de aclaraciones
+  doc.addPage();
+
+  // Título del capítulo
+  doc.font('fonts/SpaceGrotesk.ttf')
+    .fontSize(16)
+    .text(chapter.title.toUpperCase(), {
+      align: 'center',
+      paragraphGap: 20
+    });
+
+  // Contenido del capítulo
+  for (const nota of chapter.children) {
+    if (nota.content) {
+      const markdown = turndownService.turndown(nota.content);
+
+      // Insertar imágenes si corresponde
+      if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
+        const imagenSeleccionada = imagenesDisponibles.shift();
+        insertarPaginaGaleria(doc, imagenSeleccionada);
+        contadorPaginas++;
+        doc.addPage();
+      }
+
+      // Texto principal
+      doc.font('fonts/SpaceGrotesk.ttf')
+        .fontSize(11)
+        .text(markdown, {
+          indent: 10,
+          paragraphGap: 5,
+          lineGap: 3
+        });
+    } else {
+      doc.text(`- ${nota.title}`, { indent: 30 });
+    }
+
+    doc.moveDown(0.3);
+    contadorPaginas++;
+  }
+
+  doc.addPage();
+  return contadorPaginas;
+}
 
 app.get('/api/pdf', async (req, res) => {
   try {
@@ -281,10 +327,27 @@ app.get('/api/pdf', async (req, res) => {
     // Añadir página nueva para el contenido
     doc.addPage();
 
-    // 6. Procesar contenido
-    let referencesNode = null;
+    // 6. Procesar primero el capítulo de aclaraciones
+    const aclaracionesChapter = root.children.find(ch =>
+      ch.title.trim().toLowerCase().includes('1.0 aclaraciones para leer este documento')
+    );    let remainingChapters = root.children.filter(ch => ch !== aclaracionesChapter && ch.title.toLowerCase() !== 'referencias');
+    let referencesNode = root.children.find(ch => ch.title.toLowerCase() === 'referencias');
 
-    for (const capitulo of root.children) {
+    // Procesar aclaraciones justo después de la portada
+    if (aclaracionesChapter) {
+      contadorPaginas = processAclaracionesChapter(
+        doc,
+        aclaracionesChapter,
+        turndownService,
+        imagenesDisponibles,
+        contadorPaginas
+      );
+    }
+
+    // 6. Procesar contenido
+    // let referencesNode = null;
+
+    for (const capitulo of remainingChapters) {
       if (capitulo.title.toLowerCase() === 'referencias') {
         referencesNode = capitulo;
         continue;
@@ -314,30 +377,30 @@ app.get('/api/pdf', async (req, res) => {
       // Contenido de notas
       for (const nota of capitulo.children) {
         if (nota.content) {
-            const markdown = turndownService.turndown(nota.content);
-            
-            // 1. Primero verifica si debe insertar imagen ANTES del texto
-            if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
-                const imagenSeleccionada = imagenesDisponibles.shift();
-                insertarPaginaGaleria(doc, imagenSeleccionada);
-                contadorPaginas++; // Contar la página de imagen
-                doc.addPage(); // Nueva página para el texto que sigue
-            }
-            
-            // 2. Luego escribe el texto
-            doc.font('fonts/SpaceGrotesk.ttf')
-               .fontSize(11)
-               .text(markdown, {
-                   indent: 10,
-                   paragraphGap: 5
-               });
+          const markdown = turndownService.turndown(nota.content);
+
+          // 1. Primero verifica si debe insertar imagen ANTES del texto
+          if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
+            const imagenSeleccionada = imagenesDisponibles.shift();
+            insertarPaginaGaleria(doc, imagenSeleccionada);
+            contadorPaginas++; // Contar la página de imagen
+            doc.addPage(); // Nueva página para el texto que sigue
+          }
+
+          // 2. Luego escribe el texto
+          doc.font('fonts/SpaceGrotesk.ttf')
+            .fontSize(11)
+            .text(markdown, {
+              indent: 10,
+              paragraphGap: 5
+            });
         } else {
-            doc.text(`- ${nota.title}`, { indent: 30 });
+          doc.text(`- ${nota.title}`, { indent: 30 });
         }
-        
+
         doc.moveDown(0.3);
         contadorPaginas++;
-    }
+      }
 
       doc.addPage();
     }
@@ -375,8 +438,6 @@ app.get('/api/pdf', async (req, res) => {
   }
 });
 
-
 app.listen(port, () => {
   console.log(`Servidor corriendo en http://localhost:${port}`);
 });
-
