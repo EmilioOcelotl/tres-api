@@ -3,20 +3,12 @@ import sqlite3 from 'sqlite3';
 import cors from 'cors';
 import PDFDocument from 'pdfkit';
 import turndown from 'turndown';
-import imgData from './data/img.js';
+// import imgData from './data/img.js'; // Comentamos la importación de imágenes
 
 const app = express();
 const port = 3000;
 
 app.use(cors());
-
-const db = new sqlite3.Database('./document.db', sqlite3.OPEN_READONLY, (err) => {
-  if (err) {
-    console.error('Error abriendo la base:', err.message);
-  } else {
-    console.log('Base de datos conectada correctamente');
-  }
-});
 
 // Función para construir árbol jerárquico a partir de notas y ramas (branches)
 function buildTree(notes, branches) {
@@ -37,6 +29,30 @@ function buildTree(notes, branches) {
       rootNodes.push(node);
     }
   });
+
+  // ORDENAR LOS HIJOS POR notePosition - AGREGAR ESTA PARTE
+  nodesMap.forEach((node, noteId) => {
+    if (node.children.length > 0) {
+      node.children.sort((a, b) => {
+        const branchA = branches.find(br => br.noteId === a.noteId && br.parentNoteId === noteId);
+        const branchB = branches.find(br => br.noteId === b.noteId && br.parentNoteId === noteId);
+        const posA = branchA?.notePosition || 0;
+        const posB = branchB?.notePosition || 0;
+        return posA - posB;
+      });
+    }
+  });
+
+  // También ordenar rootNodes si hay múltiples
+  if (rootNodes.length > 1) {
+    rootNodes.sort((a, b) => {
+      const branchA = branches.find(br => br.noteId === a.noteId && !br.parentNoteId);
+      const branchB = branches.find(br => br.noteId === b.noteId && !br.parentNoteId);
+      const posA = branchA?.notePosition || 0;
+      const posB = branchB?.notePosition || 0;
+      return posA - posB;
+    });
+  }
 
   return rootNodes.length === 1 ? rootNodes[0] : rootNodes;
 }
@@ -61,6 +77,7 @@ function findNodeByTitle(nodes, title) {
   return null;
 }
 
+// Función para generar índice solo con primer nivel (capítulos principales)
 function insertarIndice(doc, capitulos, fontPath) {
   doc.addPage(); // Página en blanco después de portada
 
@@ -72,8 +89,8 @@ function insertarIndice(doc, capitulos, fontPath) {
     })
     .moveDown(1.5);
 
+  // Solo mostrar los títulos de primer nivel (capítulos principales)
   for (const capitulo of capitulos) {
-    // Línea del capítulo principal
     doc.font(fontPath)
       .fontSize(12)
       .text(capitulo.title, {
@@ -81,27 +98,14 @@ function insertarIndice(doc, capitulos, fontPath) {
         continued: false
       });
 
-    // Subcapítulos (notas hijas con título, si hay)
-    if (capitulo.children?.length) {
-      for (const sub of capitulo.children) {
-        if (sub.title && sub.title.trim() !== '') {
-          doc.font(fontPath)
-            .fontSize(10)
-            .fillColor('#444')
-            .text(`- ${sub.title}`, {
-              indent: 20
-            });
-        }
-      }
-    }
-
     doc.moveDown(0.5);
   }
 
   doc.moveDown(2);
 }
 
-
+// Comentamos la función de galería temporalmente
+/*
 const insertarPaginaGaleria = (doc, imagen) => {
   try {
     doc.addPage();
@@ -190,87 +194,244 @@ const insertarPaginaGaleria = (doc, imagen) => {
     console.error(`Error al insertar imagen ${imagen.img}:`, err);
   }
 };
+*/
 
-function processAclaracionesChapter(doc, chapter, turndownService, imagenesDisponibles, contadorPaginas) {
-  if (!chapter) return contadorPaginas;
+// Función para filtrar nodos "Hidden Notes" y sus hijos
+function filtrarHiddenNotes(nodo) {
+  if (!nodo) return null;
+  
+  // Si encontramos "Hidden Notes", retornamos null para omitirlo completamente
+  if (nodo.title === 'Hidden Notes') {
+    console.log('Filtrando Hidden Notes y todo su contenido');
+    return null;
+  }
+  
+  // Si el nodo tiene hijos, filtramos recursivamente
+  if (nodo.children && nodo.children.length > 0) {
+    const hijosFiltrados = nodo.children
+      .map(hijo => filtrarHiddenNotes(hijo))
+      .filter(hijo => hijo !== null);
+    
+    return {
+      ...nodo,
+      children: hijosFiltrados
+    };
+  }
+  
+  return nodo;
+}
 
-  // Configuración de página para el capítulo de aclaraciones
-  doc.addPage();
+// Función para procesar contenido jerárquico completo
+function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, contadorPaginas) {
+  if (!nodo) return contadorPaginas;
 
-  // Título del capítulo
-  doc.font('fonts/SpaceGrotesk.ttf')
-    .fontSize(16)
-    .text(chapter.title.toUpperCase(), {
-      align: 'center',
-      paragraphGap: 20
-    });
-
-  // Contenido del capítulo
-  for (const nota of chapter.children) {
-    if (nota.content) {
-      const markdown = turndownService.turndown(nota.content);
-
-      // Insertar imágenes si corresponde
-      if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
-        const imagenSeleccionada = imagenesDisponibles.shift();
-        insertarPaginaGaleria(doc, imagenSeleccionada);
-        contadorPaginas++;
+  // Configurar estilos según el nivel
+  let fontSize, indent, isTitle;
+  
+  switch (nivel) {
+    case 0: // Capítulo principal - NUEVA PÁGINA
+      doc.addPage(); // SOLO los capítulos principales tienen nueva página
+      fontSize = 18;
+      indent = 0;
+      isTitle = true;
+      
+      // Título del capítulo en mayúsculas y centrado
+      doc.font('fonts/SpaceGrotesk.ttf')
+        .fontSize(fontSize)
+        .text(nodo.title.toUpperCase(), {
+          align: 'center',
+          paragraphGap: 20
+        })
+        .moveDown(1);
+      break;
+      
+    case 1: // Subcapítulo - SIN SALTO DE PÁGINA
+      fontSize = 14;
+      indent = 20;
+      isTitle = true;
+      
+      // Verificar si hay espacio suficiente en la página actual
+      const alturaNecesaria = fontSize * 3; // Espacio aproximado para el título
+      if (doc.y + alturaNecesaria > doc.page.height - 72) { // 72 = margen inferior
         doc.addPage();
       }
-
-      // Texto principal
+      
       doc.font('fonts/SpaceGrotesk.ttf')
-        .fontSize(11)
+        .fontSize(fontSize)
+        .text(nodo.title, {
+          indent: indent,
+          paragraphGap: 10
+        })
+        .moveDown(0.5);
+      break;
+      
+    case 2: // Tercer nivel - SIN SALTO DE PÁGINA
+      fontSize = 12;
+      indent = 40;
+      isTitle = true;
+      
+      // Verificar si hay espacio suficiente en la página actual
+      const alturaNecesaria2 = fontSize * 3;
+      if (doc.y + alturaNecesaria2 > doc.page.height - 72) {
+        doc.addPage();
+      }
+      
+      doc.font('fonts/SpaceGrotesk.ttf')
+        .fontSize(fontSize)
+        .text(nodo.title, {
+          indent: indent,
+          paragraphGap: 5
+        })
+        .moveDown(0.3);
+      break;
+      
+    default: // Contenido normal - SIN SALTO DE PÁGINA
+      fontSize = 11;
+      indent = nivel * 20;
+      isTitle = false;
+  }
+
+  // Procesar contenido si existe
+  if (nodo.content && nodo.content.trim() !== '') {
+    let markdown;
+    try {
+      // Convertir el contenido a string si es un Buffer
+      const content = Buffer.isBuffer(nodo.content) ? nodo.content.toString('utf8') : nodo.content;
+      markdown = turndownService.turndown(content);
+    } catch (error) {
+      console.error('Error procesando contenido:', error);
+      markdown = '(error al procesar contenido)';
+    }
+    
+    // QUITAMOS LA INSERCIÓN DE IMÁGENES TEMPORALMENTE
+    /*
+    if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
+      const imagenSeleccionada = imagenesDisponibles.shift();
+      insertarPaginaGaleria(doc, imagenSeleccionada);
+      contadorPaginas++;
+      doc.addPage();
+    }
+    */
+
+    // Para contenido que no es título, aplicar el formato normal
+    if (!isTitle) {
+      doc.font('fonts/SpaceGrotesk.ttf')
+        .fontSize(fontSize)
         .text(markdown, {
-          indent: 10,
+          indent: indent,
           paragraphGap: 5,
           lineGap: 3
-        });
+        })
+        .moveDown(0.3);
     } else {
-      doc.text(`- ${nota.title}`, { indent: 30 });
+      // Para títulos, el contenido va después con indentación adicional
+      if (markdown.trim() !== '') {
+        doc.font('fonts/SpaceGrotesk.ttf')
+          .fontSize(11)
+          .text(markdown, {
+            indent: indent + 10,
+            paragraphGap: 5,
+            lineGap: 3
+          })
+          .moveDown(0.3);
+      }
     }
-
-    doc.moveDown(0.3);
+    
     contadorPaginas++;
   }
 
-  doc.addPage();
+  // Procesar hijos recursivamente (ya filtrados)
+  if (nodo.children && nodo.children.length > 0) {
+    for (const hijo of nodo.children) {
+      contadorPaginas = procesarContenidoJerarquico(
+        doc, 
+        hijo, 
+        turndownService, 
+        nivel + 1, 
+        contadorPaginas
+      );
+    }
+  }
+
   return contadorPaginas;
 }
 
 app.get('/api/pdf', async (req, res) => {
+  let db;
   try {
-    // 1. Consultas a la base de datos
-    const { notes, branches, note_contents } = await new Promise((resolve, reject) => {
-      const db = new sqlite3.Database('./document.db');
-
-      db.all(`SELECT noteId, title FROM notes WHERE isDeleted = 0`, [], (err, notes) => {
+    // 1. Consultas a la base de datos - USANDO LA ESTRUCTURA CORRECTA
+    const result = await new Promise((resolve, reject) => {
+      db = new sqlite3.Database('./loving_kepler.db', sqlite3.OPEN_READONLY, (err) => {
         if (err) return reject(err);
+        
+        console.log('Conectado a la base de datos para consulta');
 
-        db.all(`SELECT branchId, noteId, parentNoteId, notePosition FROM branches WHERE isDeleted = 0`, [], (err, branches) => {
-          if (err) return reject(err);
+        // Consulta modificada para usar la estructura de blobs
+        db.all(`
+          SELECT n.noteId, n.title, b.content
+          FROM notes n
+          LEFT JOIN blobs b ON n.blobId = b.blobId
+          WHERE n.isDeleted = 0
+        `, [], (err, notes) => {
+          if (err) {
+            console.error('Error en consulta de notas:', err);
+            return reject(err);
+          }
 
-          db.all(`SELECT noteId, content FROM note_contents`, [], (err, note_contents) => {
-            db.close();
-            if (err) return reject(err);
-            resolve({ notes, branches, note_contents });
+          console.log(`Encontradas ${notes.length} notas`);
+
+          db.all(`SELECT branchId, noteId, parentNoteId, notePosition FROM branches WHERE isDeleted = 0`, [], (err, branches) => {
+            if (err) {
+              console.error('Error en consulta de branches:', err);
+              return reject(err);
+            }
+
+            console.log(`Encontradas ${branches.length} ramas`);
+            resolve({ notes, branches });
           });
         });
       });
     });
 
-    // 2. Procesar datos
-    const notesWithContent = notes.map(note => ({
-      ...note,
-      content: note_contents.find(nc => nc.noteId === note.noteId)?.content || ''
-    }));
+    const { notes, branches } = result;
 
-    const tree = buildTree(notesWithContent, branches);
-    const root = findNodeByTitle(tree, 'Tres Estudios Abiertos');
+    // 2. Construir el árbol (las notas ya vienen con el contenido)
+    console.log('Construyendo árbol...');
+    const tree = buildTree(notes, branches);
+    
+    // Buscar la raíz
+    let root = findNodeByTitle(tree, 'Tres');
+    
+    if (!root) {
+      // Si no encuentra "Tres", intenta con otros nombres posibles
+      root = findNodeByTitle(tree, 'Tres Estudios Abiertos') || 
+             findNodeByTitle(tree, 'TRES ESTUDIOS ABIERTOS') ||
+             findNodeByTitle(tree, 'tres estudios abiertos');
+    }
 
     if (!root) {
-      return res.status(404).json({ error: 'No se encontró "Tres Estudios Abiertos"' });
+      console.log('No se encontró la raíz. Nodos disponibles:');
+      if (Array.isArray(tree)) {
+        tree.forEach(node => console.log('-', node.title));
+      } else {
+        console.log('-', tree.title);
+      }
+      return res.status(404).json({ error: 'No se encontró la nota raíz "Tres"' });
     }
+
+    console.log(`Raíz encontrada: "${root.title}" con ${root.children?.length || 0} hijos`);
+
+    // FILTRAR HIDDEN NOTES ANTES DE PROCESAR - FILTRAR LOS HIJOS DEL ROOT
+    const childrenFiltrados = root.children
+      ? root.children.map(child => filtrarHiddenNotes(child)).filter(child => child !== null)
+      : [];
+    
+    const rootFiltrado = {
+      ...root,
+      children: childrenFiltrados
+    };
+
+    console.log(`Después de filtrar: ${rootFiltrado.children?.length || 0} hijos`);
 
     // 3. Configuración del PDF
     const doc = new PDFDocument({
@@ -281,12 +442,11 @@ app.get('/api/pdf', async (req, res) => {
         left: 54,
         right: 54,
       },
-      // layout: 'portrait',
       bufferPages: true
     });
 
-    // Variables para control de imágenes
-    const imagenesDisponibles = [...imgData.title, ...imgData.imgs];
+    // Variables para control - QUITAMOS LAS IMÁGENES TEMPORALMENTE
+    // const imagenesDisponibles = [...imgData.title, ...imgData.imgs];
     let contadorPaginas = 0;
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -368,26 +528,14 @@ app.get('/api/pdf', async (req, res) => {
     // Añadir página nueva para el contenido
     doc.addPage();
 
-    // 6. Procesar primero el capítulo de aclaraciones (si cambia eliminar esto y descomentar abajo)
-    const aclaracionesChapter = root.children.find(ch =>
-      ch.title.trim().toLowerCase().includes('1.0 aclaraciones para leer este documento')
-    ); let remainingChapters = root.children.filter(ch => ch !== aclaracionesChapter && ch.title.toLowerCase() !== 'referencias');
-    let referencesNode = root.children.find(ch => ch.title.toLowerCase() === 'referencias');
+    // 6. Separar capítulos (usando el root filtrado)
+    const aclaracionesChapter = rootFiltrado.children?.find(ch =>
+      ch.title && ch.title.trim().toLowerCase().includes('aclaraciones')
+    );
+    let remainingChapters = rootFiltrado.children?.filter(ch => ch !== aclaracionesChapter && ch.title && ch.title.toLowerCase() !== 'referencias') || [];
+    let referencesNode = rootFiltrado.children?.find(ch => ch.title && ch.title.toLowerCase() === 'referencias');
 
-    // Procesar aclaraciones justo después de la portada
-    if (aclaracionesChapter) {
-      contadorPaginas = processAclaracionesChapter(
-        doc,
-        aclaracionesChapter,
-        turndownService,
-        imagenesDisponibles,
-        contadorPaginas
-      );
-    }
-
-    doc.addPage(); // Hoja en blanco (puedes omitir si ya está incluida)
-
-    // 7. Índice
+    // 7. ÍNDICE - Solo con capítulos principales
     const capitulosParaIndice = [];
 
     if (aclaracionesChapter) {
@@ -397,95 +545,52 @@ app.get('/api/pdf', async (req, res) => {
     if (referencesNode) {
       capitulosParaIndice.push(referencesNode);
     }
-    console.log('Capítulos para el índice:', capitulosParaIndice.map(c => c.title));
-    capitulosParaIndice.forEach(c => {
-      console.log(`Capítulo: ${c.title}, hijos: ${c.children?.length || 0}`);
-    });
 
+    console.log(`Capítulos para índice: ${capitulosParaIndice.length}`);
+    console.log('Capítulos en índice:', capitulosParaIndice.map(c => c.title));
+    
     insertarIndice(doc, capitulosParaIndice, 'fonts/SpaceGrotesk.ttf');
 
-    // 7. Procesar contenido
-    // let referencesNode = null;
-
-    for (const capitulo of remainingChapters) { // root.children y la linea anterior si aclaraciones cambia de lugar
-      if (capitulo.title.toLowerCase() === 'referencias') {
-        referencesNode = capitulo;
-        continue;
-      }
-
-
-      const chapterTitle = capitulo.title.toUpperCase(); // Space Grotesk funciona mejor en mayúsculas
-      const titleHeight = 18 * 1.2; // fontSize * lineHeight aproximado
-
-      // Calcular posición Y para centrado vertical
-      const centerY = (doc.page.height - titleHeight) / 2;
-
-      doc.font('fonts/SpaceGrotesk.ttf')
-        .fontSize(18)
-        .text(chapterTitle, {
-          align: 'center',
-          y: centerY // Posición vertical calculada
-        });
-
-      // Espacio después del título (opcional)
-      doc.moveDown(2);
-
-      // Resetear posición para contenido
-      doc.y = centerY + titleHeight + 40;
-      doc.addPage();
-
-      // Contenido de notas
-      for (const nota of capitulo.children) {
-        if (nota.content) {
-          const markdown = turndownService.turndown(nota.content);
-
-          // 1. Primero verifica si debe insertar imagen ANTES del texto
-          if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
-            const imagenSeleccionada = imagenesDisponibles.shift();
-            insertarPaginaGaleria(doc, imagenSeleccionada);
-            contadorPaginas++; // Contar la página de imagen
-            doc.addPage(); // Nueva página para el texto que sigue
-          }
-
-          // 2. Luego escribe el texto
-          doc.font('fonts/SpaceGrotesk.ttf')
-            .fontSize(11)
-            .text(markdown, {
-              indent: 10,
-              paragraphGap: 5
-            });
-        } else {
-          doc.text(`- ${nota.title}`, { indent: 30 });
-        }
-
-        doc.moveDown(0.3);
-        contadorPaginas++;
-      }
-
-      doc.addPage();
+    // 8. PROCESAR CONTENIDO JERÁRQUICO COMPLETO (usando el root filtrado)
+    
+    // Procesar aclaraciones primero si existe
+    if (aclaracionesChapter) {
+      console.log(`Procesando aclaraciones: ${aclaracionesChapter.title}`);
+      contadorPaginas = procesarContenidoJerarquico(
+        doc,
+        aclaracionesChapter,
+        turndownService,
+        0, // nivel 0 (capítulo)
+        contadorPaginas
+      );
     }
 
-    // 7. Referencias al final
+    // Procesar los demás capítulos
+    for (const capitulo of remainingChapters) {
+      console.log(`Procesando capítulo: ${capitulo.title}`);
+      contadorPaginas = procesarContenidoJerarquico(
+        doc,
+        capitulo,
+        turndownService,
+        0, // nivel 0 (capítulo)
+        contadorPaginas
+      );
+    }
+
+    // 9. REFERENCIAS al final
     if (referencesNode) {
-      doc.addPage()
-        .font('fonts/SpaceGrotesk.ttf')
-        .fontSize(18)
-        .text('Referencias')
-        .moveDown(0.5);
-
-      for (const nota of referencesNode.children) {
-        const content = nota.content
-          ? turndownService.turndown(nota.content)
-          : `- ${nota.title}`;
-
-        doc.font('fonts/SpaceGrotesk.ttf')
-          .fontSize(11)
-          .text(content, { indent: 20 })
-          .moveDown(0.2);
-      }
+      console.log(`Procesando referencias: ${referencesNode.title}`);
+      contadorPaginas = procesarContenidoJerarquico(
+        doc,
+        referencesNode,
+        turndownService,
+        0, // nivel 0 (capítulo)
+        contadorPaginas
+      );
     }
 
     doc.end();
+    console.log('PDF generado exitosamente');
 
   } catch (err) {
     console.error('Error generando PDF:', err);
@@ -493,6 +598,12 @@ app.get('/api/pdf', async (req, res) => {
       res.status(500).json({
         error: 'Error al generar el PDF',
         details: err.message
+      });
+    }
+  } finally {
+    if (db) {
+      db.close((err) => {
+        if (err) console.error('Error cerrando BD:', err);
       });
     }
   }

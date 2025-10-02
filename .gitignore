@@ -20,3 +20,5 @@ notas.sqlite-wal
 loving_kepler.db
 magical_blackwell.db
 document.db
+*.db-shm
+*.db-wal
