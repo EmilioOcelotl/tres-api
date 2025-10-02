@@ -10,7 +10,7 @@ const port = 3000;
 
 app.use(cors());
 
-const db = new sqlite3.Database('./notas.sqlite', sqlite3.OPEN_READONLY, (err) => {
+const db = new sqlite3.Database('./document.db', sqlite3.OPEN_READONLY, (err) => {
   if (err) {
     console.error('Error abriendo la base:', err.message);
   } else {
@@ -60,6 +60,47 @@ function findNodeByTitle(nodes, title) {
 
   return null;
 }
+
+function insertarIndice(doc, capitulos, fontPath) {
+  doc.addPage(); // Página en blanco después de portada
+
+  doc.font(fontPath)
+    .fontSize(16)
+    .text('ÍNDICE', {
+      align: 'center',
+      underline: true
+    })
+    .moveDown(1.5);
+
+  for (const capitulo of capitulos) {
+    // Línea del capítulo principal
+    doc.font(fontPath)
+      .fontSize(12)
+      .text(capitulo.title, {
+        indent: 0,
+        continued: false
+      });
+
+    // Subcapítulos (notas hijas con título, si hay)
+    if (capitulo.children?.length) {
+      for (const sub of capitulo.children) {
+        if (sub.title && sub.title.trim() !== '') {
+          doc.font(fontPath)
+            .fontSize(10)
+            .fillColor('#444')
+            .text(`- ${sub.title}`, {
+              indent: 20
+            });
+        }
+      }
+    }
+
+    doc.moveDown(0.5);
+  }
+
+  doc.moveDown(2);
+}
+
 
 const insertarPaginaGaleria = (doc, imagen) => {
   try {
@@ -201,7 +242,7 @@ app.get('/api/pdf', async (req, res) => {
   try {
     // 1. Consultas a la base de datos
     const { notes, branches, note_contents } = await new Promise((resolve, reject) => {
-      const db = new sqlite3.Database('./notas.sqlite');
+      const db = new sqlite3.Database('./document.db');
 
       db.all(`SELECT noteId, title FROM notes WHERE isDeleted = 0`, [], (err, notes) => {
         if (err) return reject(err);
@@ -249,7 +290,7 @@ app.get('/api/pdf', async (req, res) => {
     let contadorPaginas = 0;
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="Tres_Estudios_Abiertos.pdf"');
+    res.setHeader('Content-Disposition', 'attachment; filename="TEA.pdf"');
     doc.pipe(res);
 
     // 4. Configurar Turndown
@@ -327,10 +368,10 @@ app.get('/api/pdf', async (req, res) => {
     // Añadir página nueva para el contenido
     doc.addPage();
 
-    // 6. Procesar primero el capítulo de aclaraciones
+    // 6. Procesar primero el capítulo de aclaraciones (si cambia eliminar esto y descomentar abajo)
     const aclaracionesChapter = root.children.find(ch =>
       ch.title.trim().toLowerCase().includes('1.0 aclaraciones para leer este documento')
-    );    let remainingChapters = root.children.filter(ch => ch !== aclaracionesChapter && ch.title.toLowerCase() !== 'referencias');
+    ); let remainingChapters = root.children.filter(ch => ch !== aclaracionesChapter && ch.title.toLowerCase() !== 'referencias');
     let referencesNode = root.children.find(ch => ch.title.toLowerCase() === 'referencias');
 
     // Procesar aclaraciones justo después de la portada
@@ -344,10 +385,29 @@ app.get('/api/pdf', async (req, res) => {
       );
     }
 
-    // 6. Procesar contenido
+    doc.addPage(); // Hoja en blanco (puedes omitir si ya está incluida)
+
+    // 7. Índice
+    const capitulosParaIndice = [];
+
+    if (aclaracionesChapter) {
+      capitulosParaIndice.push(aclaracionesChapter);
+    }
+    capitulosParaIndice.push(...remainingChapters);
+    if (referencesNode) {
+      capitulosParaIndice.push(referencesNode);
+    }
+    console.log('Capítulos para el índice:', capitulosParaIndice.map(c => c.title));
+    capitulosParaIndice.forEach(c => {
+      console.log(`Capítulo: ${c.title}, hijos: ${c.children?.length || 0}`);
+    });
+
+    insertarIndice(doc, capitulosParaIndice, 'fonts/SpaceGrotesk.ttf');
+
+    // 7. Procesar contenido
     // let referencesNode = null;
 
-    for (const capitulo of remainingChapters) {
+    for (const capitulo of remainingChapters) { // root.children y la linea anterior si aclaraciones cambia de lugar
       if (capitulo.title.toLowerCase() === 'referencias') {
         referencesNode = capitulo;
         continue;

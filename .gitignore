@@ -17,3 +17,6 @@ node_modules/
 notas.sqlite
 notas.sqlite-shm
 notas.sqlite-wal
+loving_kepler.db
+magical_blackwell.db
+document.db

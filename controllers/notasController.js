@@ -1,7 +1,7 @@
 // controllers/notasController.js
 import sqlite3 from 'sqlite3';
 
-const db = new sqlite3.Database('./notas.sqlite', sqlite3.OPEN_READONLY, (err) => {
+const db = new sqlite3.Database('./loving_kepler.db', sqlite3.OPEN_READONLY, (err) => {
   if (err) console.error('Error al abrir la base:', err.message);
   else console.log('Base de datos conectada desde notasController');
 });
