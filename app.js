@@ -10,6 +10,128 @@ const port = 3000;
 
 app.use(cors());
 
+app.get('/pdf', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Preparando documento - Tres Estudios Abiertos</title>
+        <style>
+            html, body {
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            body { 
+                font-family: 'Arial', sans-serif; 
+                text-align: center; 
+                background: linear-gradient(135deg, rgb(20, 21, 23) 0%, rgb(112, 112, 112) 100%);
+                color: #333;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0;
+            }
+            .container {
+                background: rgba(255, 255, 255, 0.9);
+                backdrop-filter: blur(10px);
+                padding: 40px;
+                border-radius: 15px;
+                border: 1px solid rgba(0, 0, 0, 0.1);
+                max-width: 500px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                margin: 20px;
+            }
+            .spinner {
+                border: 4px solid rgba(0, 0, 0, 0.1);
+                border-top: 4px solid #555;
+                border-radius: 50%;
+                width: 50px;
+                height: 50px;
+                animation: spin 1s linear infinite;
+                margin: 20px auto;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            h1 {
+                margin-bottom: 10px;
+                font-size: 24px;
+                color: #333;
+            }
+            p {
+                margin: 10px 0;
+                color: #666;
+                line-height: 1.5;
+            }
+            .progress {
+                margin: 20px 0;
+                font-size: 14px;
+                color: #777;
+                font-weight: 500;
+            }
+            .success {
+                color: #2e7d32;
+                font-weight: bold;
+            }
+            .checkmark {
+                font-size: 48px;
+                margin: 20px 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🖨️ Generando Documento</h1>
+            <div class="spinner" id="spinner"></div>
+            <div class="checkmark" id="checkmark" style="display: none;">✅</div>
+            <p><strong>Tres Estudios Abiertos</strong></p>
+            <p>Estamos preparando tu PDF con todo el contenido...</p>
+            <div class="progress" id="progress">⏳ Preparando documento...</div>
+            <p id="status-message">La descarga comenzará automáticamente.</p>
+        </div>
+        <script>
+            // Mostrar mensaje y luego redireccionar
+            let dots = 0;
+            const progress = document.querySelector('#progress');
+            const spinner = document.querySelector('#spinner');
+            const checkmark = document.querySelector('#checkmark');
+            const statusMessage = document.querySelector('#status-message');
+            
+            const interval = setInterval(() => {
+                dots = (dots + 1) % 4;
+                progress.textContent = '⏳ Preparando documento' + '.'.repeat(dots);
+            }, 500);
+            
+            // Cambiar a "descarga realizada" después de 1.5 segundos
+            setTimeout(() => {
+                clearInterval(interval);
+                // Ocultar spinner y mostrar checkmark
+                spinner.style.display = 'none';
+                checkmark.style.display = 'block';
+                
+                // Cambiar mensajes
+                progress.textContent = '✅ Descarga realizada';
+                progress.className = 'progress success';
+                statusMessage.textContent = 'El PDF se ha descargado correctamente.';
+                
+                // Cambiar título del documento
+                document.querySelector('h1').textContent = '✅ Documento Listo';
+                
+            }, 1500);
+            
+            // Redireccionar después de 2 segundos para iniciar la descarga
+            setTimeout(() => {
+                window.location.href = '/api/pdf';
+            }, 2000);
+        </script>
+    </body>
+    </html>
+  `);
+});
+
 // Función para construir árbol jerárquico a partir de notas y ramas (branches)
 function buildTree(notes, branches) {
   // Crear mapa de nodos

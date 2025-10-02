@@ -1,13 +1,12 @@
 # tres-api
 
-El objetivo de este proyecto es trasladar un servicio específico (PDF) a una API general. 
+API general para la lectura de notas en una base de datos e impresión en formato PDF. 
 
 ## Uso
 
 ```
 npm install
 npm start
-node app.js
 ```
 
 Con nodemon
@@ -27,3 +26,4 @@ node inspect-db.mjs
 ## Endpoints
 
 - **/api/pdf** imprime el archivo pdf (antes /tres) 
+- **/pdf** página que se despliega antes de la impresión del archivo pdf. 
