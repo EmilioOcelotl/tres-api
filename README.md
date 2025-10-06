@@ -21,7 +21,7 @@ npm run dev
 
 O usar pm2.
 
-## Lectura
+### Lectura
 
 Para leer lo que tiene la base de datos: 
 
@@ -29,7 +29,7 @@ Para leer lo que tiene la base de datos:
 node inspect-db.mjs
 ```
 
-## Endpoints
+### Endpoints
 
 - **/api/pdf** imprime el archivo pdf (antes /tres) 
 - **/pdf** página que se despliega antes de la impresión del archivo pdf. 
