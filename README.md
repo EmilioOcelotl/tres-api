@@ -1,8 +1,12 @@
-# tres-api
+# tres-app
+
+Front y back final de la tesis. 
+
+## Back
 
 API general para la lectura de notas en una base de datos e impresión en formato PDF. 
 
-## Uso
+### Uso
 
 ```
 npm install
@@ -14,6 +18,8 @@ Con nodemon
 ```
 npm run dev
 ```
+
+O usar pm2.
 
 ## Lectura
 

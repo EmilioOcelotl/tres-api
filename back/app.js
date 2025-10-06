@@ -3,12 +3,22 @@ import sqlite3 from 'sqlite3';
 import cors from 'cors';
 import PDFDocument from 'pdfkit';
 import turndown from 'turndown';
-// import imgData from './data/img.js'; // Comentamos la importación de imágenes
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+// Para usar __dirname con ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = 8081;
 
 app.use(cors());
+
+// RUTAS CORREGIDAS - desde back/app.js
+const databasePath = path.join(__dirname, 'database', 'loving_kepler.db');
+const fontsPath = path.join(__dirname, '..', 'assets', 'fonts');
 
 app.get('/pdf', (req, res) => {
   res.send(`
@@ -226,98 +236,6 @@ function insertarIndice(doc, capitulos, fontPath) {
   doc.moveDown(2);
 }
 
-// Comentamos la función de galería temporalmente
-/*
-const insertarPaginaGaleria = (doc, imagen) => {
-  try {
-    doc.addPage();
-
-    // Configuración de márgenes (reducidos para maximizar espacio)
-    const margenSuperior = 30;
-    const margenInferior = 30;
-    const margenLateral = 54;
-
-    // Dimensiones disponibles
-    const anchoDisponible = doc.page.width - (margenLateral * 2);
-    const altoDisponible = doc.page.height - margenSuperior - margenInferior;
-
-    // 1. Precalcular espacio para el pie de foto (mínimo 4 líneas)
-    let textoPie = '';
-    let alturaPie = 0;
-
-    if (imagen.nota || imagen.titulo) {
-      textoPie = imagen.titulo ? `${imagen.titulo}. ${imagen.nota || ''}` : imagen.nota;
-      alturaPie = Math.max(
-        doc.font('fonts/SpaceGrotesk.ttf').fontSize(9).heightOfString(textoPie, { width: anchoDisponible }),
-        9 * 4 // Mínimo espacio para 4 líneas
-      );
-    }
-
-    // 2. Cargar imagen y analizar proporciones
-    const img = doc.openImage(imagen.img);
-    const esVertical = img.height > img.width * 1.2; // Si es 20% más alta que ancha
-    const esCuadrada = Math.abs(img.width - img.height) < img.width * 0.1; // ±10%
-
-    // 3. Ajustar estrategia según tipo de imagen
-    let imgWidth, imgHeight;
-
-    if (esVertical) {
-      // Para imágenes verticales: limitar altura y centrar
-      const ratio = Math.min(
-        anchoDisponible / img.width,
-        (altoDisponible * 0.7) / img.height // Usar solo 70% del alto disponible
-      );
-      imgWidth = img.width * ratio;
-      imgHeight = img.height * ratio;
-    } else if (esCuadrada) {
-      // Para imágenes cuadradas: usar 80% del espacio menor
-      const espacioDisponible = Math.min(anchoDisponible, altoDisponible - alturaPie) * 0.8;
-      const ratio = espacioDisponible / Math.max(img.width, img.height);
-      imgWidth = img.width * ratio;
-      imgHeight = img.height * ratio;
-    } else {
-      // Para horizontales: comportamiento normal
-      const ratio = Math.min(
-        anchoDisponible / img.width,
-        (altoDisponible - alturaPie) / img.height
-      );
-      imgWidth = img.width * ratio;
-      imgHeight = img.height * ratio;
-    }
-
-    // 4. Calcular posición centrada con espacio garantizado para el pie
-    const espacioLibreVertical = doc.page.height - margenSuperior - imgHeight - alturaPie - margenInferior;
-    const yImagen = margenSuperior + Math.max(0, espacioLibreVertical / 2);
-
-    // 5. Dibujar imagen
-    const xImagen = margenLateral + (anchoDisponible - imgWidth) / 2;
-    doc.image(imagen.img, xImagen, yImagen, {
-      width: imgWidth,
-      height: imgHeight
-    });
-
-    // 6. Pie de foto con posición asegurada
-    if (textoPie) {
-      const yTexto = Math.min(
-        yImagen + imgHeight + 10,
-        doc.page.height - margenInferior - alturaPie
-      );
-
-      doc.font('fonts/SpaceGrotesk.ttf')
-        .fontSize(9)
-        .fillColor('#555555')
-        .text(textoPie, margenLateral, yTexto, {
-          width: anchoDisponible,
-          align: 'center'
-        });
-    }
-
-  } catch (err) {
-    console.error(`Error al insertar imagen ${imagen.img}:`, err);
-  }
-};
-*/
-
 // Función para filtrar nodos "Hidden Notes" y sus hijos
 function filtrarHiddenNotes(nodo) {
   if (!nodo) return null;
@@ -344,7 +262,7 @@ function filtrarHiddenNotes(nodo) {
 }
 
 // Función para procesar contenido jerárquico completo
-function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, contadorPaginas) {
+function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, contadorPaginas, fontPath) {
   if (!nodo) return contadorPaginas;
 
   // Configurar estilos según el nivel
@@ -358,7 +276,7 @@ function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, cont
       isTitle = true;
       
       // Título del capítulo en mayúsculas y centrado
-      doc.font('fonts/SpaceGrotesk.ttf')
+      doc.font(fontPath)
         .fontSize(fontSize)
         .text(nodo.title.toUpperCase(), {
           align: 'center',
@@ -378,7 +296,7 @@ function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, cont
         doc.addPage();
       }
       
-      doc.font('fonts/SpaceGrotesk.ttf')
+      doc.font(fontPath)
         .fontSize(fontSize)
         .text(nodo.title, {
           indent: indent,
@@ -398,7 +316,7 @@ function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, cont
         doc.addPage();
       }
       
-      doc.font('fonts/SpaceGrotesk.ttf')
+      doc.font(fontPath)
         .fontSize(fontSize)
         .text(nodo.title, {
           indent: indent,
@@ -424,20 +342,10 @@ function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, cont
       console.error('Error procesando contenido:', error);
       markdown = '(error al procesar contenido)';
     }
-    
-    // QUITAMOS LA INSERCIÓN DE IMÁGENES TEMPORALMENTE
-    /*
-    if (contadorPaginas % 2 === 0 && imagenesDisponibles.length > 0) {
-      const imagenSeleccionada = imagenesDisponibles.shift();
-      insertarPaginaGaleria(doc, imagenSeleccionada);
-      contadorPaginas++;
-      doc.addPage();
-    }
-    */
 
     // Para contenido que no es título, aplicar el formato normal
     if (!isTitle) {
-      doc.font('fonts/SpaceGrotesk.ttf')
+      doc.font(fontPath)
         .fontSize(fontSize)
         .text(markdown, {
           indent: indent,
@@ -448,7 +356,7 @@ function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, cont
     } else {
       // Para títulos, el contenido va después con indentación adicional
       if (markdown.trim() !== '') {
-        doc.font('fonts/SpaceGrotesk.ttf')
+        doc.font(fontPath)
           .fontSize(11)
           .text(markdown, {
             indent: indent + 10,
@@ -470,7 +378,8 @@ function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, cont
         hijo, 
         turndownService, 
         nivel + 1, 
-        contadorPaginas
+        contadorPaginas,
+        fontPath
       );
     }
   }
@@ -481,9 +390,19 @@ function procesarContenidoJerarquico(doc, nodo, turndownService, nivel = 0, cont
 app.get('/api/pdf', async (req, res) => {
   let db;
   try {
-    // 1. Consultas a la base de datos - USANDO LA ESTRUCTURA CORRECTA
+    // Ruta de la fuente
+    const fontPath = path.join(fontsPath, 'SpaceGrotesk.ttf');
+    console.log('Usando fuente en:', fontPath);
+
+    // Verificar que existe la fuente
+    const fs = await import('fs');
+    if (!fs.existsSync(fontPath)) {
+      throw new Error(`No se encuentra la fuente: ${fontPath}`);
+    }
+
+    // 1. Consultas a la base de datos - USANDO RUTA ABSOLUTA
     const result = await new Promise((resolve, reject) => {
-      db = new sqlite3.Database('./loving_kepler.db', sqlite3.OPEN_READONLY, (err) => {
+      db = new sqlite3.Database(databasePath, sqlite3.OPEN_READONLY, (err) => {
         if (err) return reject(err);
         
         console.log('Conectado a la base de datos para consulta');
@@ -567,8 +486,6 @@ app.get('/api/pdf', async (req, res) => {
       bufferPages: true
     });
 
-    // Variables para control - QUITAMOS LAS IMÁGENES TEMPORALMENTE
-    // const imagenesDisponibles = [...imgData.title, ...imgData.imgs];
     let contadorPaginas = 0;
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -590,7 +507,7 @@ app.get('/api/pdf', async (req, res) => {
     // 5. PORTADA COMPLETA
     doc.moveDown(3);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(18)
       .text('UNIVERSIDAD NACIONAL AUTÓNOMA DE MÉXICO', {
         align: 'right',
@@ -598,7 +515,7 @@ app.get('/api/pdf', async (req, res) => {
       })
       .moveDown(1);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(11)
       .text('Programa de Maestría y Doctorado en Música', { align: 'right' })
       .text('Facultad de Música', { align: 'right' })
@@ -606,12 +523,12 @@ app.get('/api/pdf', async (req, res) => {
       .text('Instituto de Investigaciones Antropológicas', { align: 'right' })
       .moveDown(1);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(18)
       .text('TRES ESTUDIOS ABIERTOS', { align: 'right' })
       .moveDown(0.5);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(11)
       .text('Escritura de código en Javascript para el performance audiovisual y la investigación artística', {
         align: 'right',
@@ -619,30 +536,30 @@ app.get('/api/pdf', async (req, res) => {
       })
       .moveDown(1);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(11)
       .text('Que para optar por el grado de', { align: 'right' })
       .moveDown(1);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(11)
       .text('Doctor en Música', { align: 'right' })
-      .font('fonts/SpaceGrotesk.ttf')
+      .font(fontPath)
       .fontSize(11)
       .text('(Tecnología Musical)', { align: 'right' })
       .moveDown(1);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(11)
       .text('Presenta', { align: 'right' })
       .moveDown(1);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(14)
       .text('Emilio Ocelotl Reyes', { align: 'right' })
       .moveDown(1);
 
-    doc.font('fonts/SpaceGrotesk.ttf')
+    doc.font(fontPath)
       .fontSize(12)
       .text('Tutor Principal: Hugo Solís', { align: 'right' })
       .text('Comité tutor: Iracema de Andrade y Fernando Monreal', { align: 'right' });
@@ -671,7 +588,7 @@ app.get('/api/pdf', async (req, res) => {
     console.log(`Capítulos para índice: ${capitulosParaIndice.length}`);
     console.log('Capítulos en índice:', capitulosParaIndice.map(c => c.title));
     
-    insertarIndice(doc, capitulosParaIndice, 'fonts/SpaceGrotesk.ttf');
+    insertarIndice(doc, capitulosParaIndice, fontPath);
 
     // 8. PROCESAR CONTENIDO JERÁRQUICO COMPLETO (usando el root filtrado)
     
@@ -683,7 +600,8 @@ app.get('/api/pdf', async (req, res) => {
         aclaracionesChapter,
         turndownService,
         0, // nivel 0 (capítulo)
-        contadorPaginas
+        contadorPaginas,
+        fontPath
       );
     }
 
@@ -695,7 +613,8 @@ app.get('/api/pdf', async (req, res) => {
         capitulo,
         turndownService,
         0, // nivel 0 (capítulo)
-        contadorPaginas
+        contadorPaginas,
+        fontPath
       );
     }
 
@@ -707,7 +626,8 @@ app.get('/api/pdf', async (req, res) => {
         referencesNode,
         turndownService,
         0, // nivel 0 (capítulo)
-        contadorPaginas
+        contadorPaginas,
+        fontPath
       );
     }
 
