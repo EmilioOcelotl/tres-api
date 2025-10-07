@@ -1,10 +1,10 @@
 # tres-app
 
-Plataforma integral para la gestión, visualización y exportación de notas académicas desde Trilium Notes.
+Backend para la tesis "Tres Estudios Abiertos" - gestión, visualización 3D y exportación PDF de notas desde Trilium Notes.
 
 ## Back
 
-API general para la lectura de notas en una base de datos e impresión en formato PDF. 
+API Node.js que lee la base de datos de Trilium Notes y genera: PDF de la tesis completa + estructura JSON para visualización 3D.
 
 ### Uso
 
@@ -25,6 +25,12 @@ O usar pm2:
 pm2 start back/app.js --name "tres-app" 
 ```
 
+Actualizar todo en el servidor: 
+
+```
+git pull && cd back && npm install && cd .. && pm2 reload tres-app
+```
+
 ### Lectura
 
 Para leer lo que tiene la base de datos: 
@@ -35,5 +41,20 @@ node inspect-db.mjs
 
 ### Endpoints
 
-- **/api/pdf** imprime el archivo pdf (antes /tres) 
-- **/pdf** página que se despliega antes de la impresión del archivo pdf. 
+- **GET /** - Documentación de la API y endpoints disponibles
+- **GET /health** - Estado del servicio
+- **GET /pdf** - Interfaz web para generación de PDF
+- **GET /api/pdf** - Descarga directa del PDF completo de la tesis
+- **GET /api/3d/structure** - Estructura jerárquica de notas para visualización 3D
+- **GET /api/3d/note/:id/content** - Contenido específico de una nota
+- **GET /api/3d/search?q=query** - Búsqueda de notas por término
+- **GET /api/3d/health** - Estado específico de la API 3D
+
+### Contexto Técnico
+
+- **Base de datos**: SQLite de Trilium Notes (tablas: notes, branches, blobs)
+- **Estructura**: Árbol jerárquico con parentNoteId y notePosition
+- **Raíz**: Nota "Tres" o "Tres Estudios Abiertos"
+- **Filtros**: Excluye "Hidden Notes" automáticamente
+- **Procesamiento**: HTML a Markdown para PDF, JSON optimizado para Three.js
+- **Arquitectura**: Modular (routes/services/utils) con NoteService principal
