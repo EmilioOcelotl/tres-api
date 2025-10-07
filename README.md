@@ -1,6 +1,6 @@
 # tres-app
 
-Front y back final de la tesis. 
+Plataforma integral para la gestión, visualización y exportación de notas académicas desde Trilium Notes.
 
 ## Back
 
@@ -19,7 +19,11 @@ Con nodemon
 npm run dev
 ```
 
-O usar pm2.
+O usar pm2:
+
+```
+pm2 start back/app.js --name "tres-app" 
+```
 
 ### Lectura
 
