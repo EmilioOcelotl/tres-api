@@ -1,6 +1,6 @@
 # tres-app
 
-Backend para la tesis "Tres Estudios Abiertos" - gestión, visualización 3D y exportación PDF de notas desde Trilium Notes.
+Plataforma integral para la tesis "Tres Estudios Abiertos" - gestión, visualización 3D y exportación PDF de notas desde Trilium Notes.
 
 ## Back
 

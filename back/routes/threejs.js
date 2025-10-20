@@ -1,13 +1,14 @@
 // routes/threejs.js
 import express from 'express';
 import { NoteService } from '../services/noteService.js';
+import { findNodeById } from '../utils/treeBuilder.js';
 
 const router = express.Router();
 const noteService = new NoteService();
 
-// Función auxiliar para contar nodos (fuera de las rutas)
+// Función auxiliar para contar nodos (para logs)
 function countNodes(node) {
-  let count = 1; // Contar el nodo actual
+  let count = 1;
   if (node.children && node.children.length > 0) {
     node.children.forEach(child => {
       count += countNodes(child);
@@ -16,13 +17,13 @@ function countNodes(node) {
   return count;
 }
 
-// Endpoint principal para Three.js - estructura completa
+// 1️⃣ Endpoint principal para Three.js - estructura completa
 router.get('/structure', async (req, res) => {
   try {
     console.log('Solicitando estructura para Three.js...');
     const structure = await noteService.getStructureForThreeJS();
-    
     console.log(`Estructura generada: ${countNodes(structure)} nodos`);
+
     res.json({
       success: true,
       data: structure,
@@ -31,83 +32,104 @@ router.get('/structure', async (req, res) => {
         generatedAt: new Date().toISOString()
       }
     });
-    
+
   } catch (error) {
     console.error('Error getting 3D structure:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Error al obtener la estructura 3D',
-      details: error.message 
+      details: error.message
     });
   }
 });
 
-// Endpoint para contenido de nota individual
+// 2️⃣ Endpoint para contenido de nota individual
 router.get('/note/:id/content', async (req, res) => {
   try {
     const noteId = req.params.id;
     console.log(`Solicitando contenido para nota: ${noteId}`);
-    
-    // Por ahora retornamos un placeholder - luego implementaremos la lógica real
-    const content = {
-      id: noteId,
-      title: `Nota ${noteId}`,
-      content: 'Contenido de la nota...',
-      type: 'note',
-      lastModified: new Date().toISOString()
-    };
-    
+
+    const tree = await noteService.getCompleteTree();
+    const node = findNodeById(tree, noteId);
+
+    if (!node) {
+      return res.status(404).json({
+        success: false,
+        error: 'Nota no encontrada'
+      });
+    }
+
+    // Devolver contenido completo
     res.json({
       success: true,
-      data: content
+      data: {
+        id: node.noteId,
+        title: node.title,
+        content: node.content || '',
+        type: 'note',
+        lastModified: new Date().toISOString()
+      }
     });
-    
+
   } catch (error) {
     console.error('Error getting note content:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Error al obtener el contenido de la nota',
-      details: error.message 
+      details: error.message
     });
   }
 });
 
-// Búsqueda para Three.js
+// 3️⃣ Búsqueda para Three.js por título (case-insensitive)
 router.get('/search', async (req, res) => {
   try {
-    const query = req.query.q;
+    const query = req.query.q?.toLowerCase();
     if (!query) {
       return res.status(400).json({
         success: false,
         error: 'Parámetro de búsqueda requerido'
       });
     }
-    
-    console.log(`Búsqueda Three.js: "${query}"`);
-    
-    // Placeholder para búsqueda - implementaremos después
-    const results = {
-      query,
-      results: [],
-      count: 0
-    };
-    
+
+    const tree = await noteService.getCompleteTree();
+    const results = [];
+
+    function searchNode(node) {
+      if (node.title.toLowerCase().includes(query)) {
+        results.push({
+          id: node.noteId,
+          title: node.title,
+          type: 'note'
+        });
+      }
+      if (node.children && node.children.length > 0) {
+        node.children.forEach(searchNode);
+      }
+    }
+
+    searchNode(tree);
+
     res.json({
       success: true,
-      data: results
+      data: {
+        query,
+        results,
+        count: results.length
+      }
     });
-    
+
   } catch (error) {
     console.error('Error en búsqueda:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Error en la búsqueda',
-      details: error.message 
+      details: error.message
     });
   }
 });
 
-// Health check específico para Three.js
+// 4️⃣ Health check específico para Three.js
 router.get('/health', (req, res) => {
   res.json({
     success: true,

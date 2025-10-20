@@ -91,3 +91,19 @@ export function buildTree(notes, branches) {
     
     return nodo;
   }
+
+  // Función para buscar nodo por noteId (recursiva)
+export function findNodeById(node, id) {
+  if (!node) return null;
+
+  if (node.noteId === id) return node;
+
+  if (node.children && node.children.length > 0) {
+    for (const child of node.children) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
